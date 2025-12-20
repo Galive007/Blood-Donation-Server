@@ -12,6 +12,10 @@ const app = express();
 app.use(cors())
 app.use(express.json())
 
+// {
+//     origin:['https://local-food-review.netlify.app']
+// }
+
 // const serviceAccount = require("./firebase-admin-key.json");
 const admin = require("firebase-admin");
 const { url } = require('inspector');
@@ -58,7 +62,7 @@ const client = new MongoClient(uri, {
 async function run() {
     try {
         // Connect the client to the server	(optional starting in v4.7)
-        await client.connect();
+        // await client.connect();
 
 
         const database = client.db('blooddonation')
@@ -106,16 +110,16 @@ async function run() {
             res.send(result);
         });
 
-        // GET 3 recent requests for current donor
-        app.get('/donor/recent-requests', async (req, res) => {
-            const email = req.decoded_email;
-            const recentRequests = await bloodRequestsCollection
-                .find({ email })
-                .sort({ createdAt: -1 }) // most recent first
-                .limit(3)
-                .toArray();
-            res.send(recentRequests);
-        });
+        // // GET 3 recent requests for current donor
+        // app.get('/donor/recent-requests', async (req, res) => {
+        //     const email = req.decoded_email;
+        //     const recentRequests = await bloodRequestsCollection
+        //         .find({ email })
+        //         .sort({ createdAt: -1 }) // most recent first
+        //         .limit(3)
+        //         .toArray();
+        //     res.send(recentRequests);
+        // });
 
 
 
@@ -192,30 +196,24 @@ async function run() {
             res.send(result)
         })
 
-        // app.get('/donor/recent-requests', verifyFBToken, async (req, res) => {
-        //     try {
-        //         const {email} = req.decoded_email;
-        //         console.log(email);
-
-
-        //         // Fetch up to 3 recent requests for this donor
-        //         const recentRequests = await bloodRequestsCollection
-        //             .find({ email })            // only requests created by this donor
-        //             .sort({ createdAt: -1 })    // most recent first
-        //             .limit(3)
-        //             .toArray();
-
-        //         // If no requests, send empty array
-        //         if (!recentRequests || recentRequests.length === 0) {
-        //             return res.send([]); // frontend can hide this section
-        //         }
-
-        //         res.send(recentRequests);
-        //     } catch (error) {
-        //         console.error("Error fetching recent requests:", error);
-        //         res.status(500).send({ message: 'Failed to load recent donation requests' });
-        //     }
-        // });
+        app.get('/donor/recent-requests',verifyFBToken,  async (req, res) => {
+            try {
+                const email = req.decoded_email;
+                console.log(email);               
+                const recentRequests = await bloodRequestsCollection
+                    .find({ email })            
+                    .sort({ createdAt: -1 })    
+                    .limit(3)
+                    .toArray();
+                if (!recentRequests || recentRequests.length === 0) {
+                    return res.send(); 
+                }
+                res.send(recentRequests);
+            } catch (error) {
+                console.error("Error fetching recent requests:", error);
+                res.status(500).send({ message: 'Failed to load recent donation requests' });
+            }
+        });
         // All-requests
         app.get('/all-requests', async (req, res) => {
             const result = await bloodRequestsCollection
@@ -352,7 +350,7 @@ async function run() {
 
 
         // Send a ping to confirm a successful connection
-        await client.db("admin").command({ ping: 1 });
+        // await client.db("admin").command({ ping: 1 });
         console.log("Pinged your deployment. You successfully connected to MongoDB!");
     } finally {
         // Ensures that the client will close when you finish/error

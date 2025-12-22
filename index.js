@@ -9,7 +9,9 @@ const crypto = require('crypto')
 
 
 const app = express();
-app.use(cors())
+app.use(cors({
+    origin:['https://blooddonation25.netlify.app']
+}))
 app.use(express.json())
 
 
@@ -514,7 +516,7 @@ async function run() {
         });
 
         // All-requests
-        app.get('/all-requests', verifyFBToken, async (req, res) => {
+        app.get('/all-requests', async (req, res) => {
             const result = await bloodRequestsCollection
                 .find()
                 .toArray();

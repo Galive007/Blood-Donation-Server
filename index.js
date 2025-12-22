@@ -1,4 +1,4 @@
-const { MongoClient, ServerApiVersion } = require('mongodb');
+const { MongoClient, ServerApiVersion, ObjectId } = require('mongodb');
 const express = require('express')
 const cors = require('cors')
 require('dotenv').config()
@@ -12,9 +12,7 @@ const app = express();
 app.use(cors())
 app.use(express.json())
 
-// {
-//     origin:['https://local-food-review.netlify.app']
-// }
+
 
 // const serviceAccount = require("./firebase-admin-key.json");
 const admin = require("firebase-admin");
@@ -46,6 +44,17 @@ const verifyFBToken = async (req, res, next) => {
     }
 }
 
+const verifyAdmin = async (req, res, next) => {
+    const user = await userCollection.findOne({
+        email: req.decoded_email
+    });
+
+    if (!user || user.role !== 'admin') {
+        return res.status(403).send({ message: 'Forbidden: Admin only' });
+    }
+
+    next();
+};
 
 
 const uri = `mongodb+srv://${process.env.USER}:${process.env.PASSWORD}@cluster0.zbtu92j.mongodb.net/?appName=Cluster0`
@@ -69,6 +78,8 @@ async function run() {
         const userCollection = database.collection('user')
         const bloodRequestsCollection = database.collection('bloodRequest')
         const paymentsCollection = database.collection('payments')
+        const contactCollection = database.collection('contactMessages');
+
 
 
         app.post('/users', async (req, res) => {
@@ -157,37 +168,324 @@ async function run() {
         //     res.send(result)
         // })
 
-        app.patch('/update/user/status', verifyFBToken, async (req, res) => {
-            const { email, status } = req.query
-            const query = { email: email }
+        // app.patch('/update/user/status', verifyFBToken, async (req, res) => {
+        //     const { email, status } = req.query
+        //     const query = { email: email }
 
-            const updateStatus = {
-                $set: {
-                    status: status
-                }
+        //     const updateStatus = {
+        //         $set: {
+        //             status: status
+        //         }
+        //     }
+        //     const result = await userCollection.updateOne(query, updateStatus)
+        //     res.send(result)
+        // })
+
+        app.patch('/update/user/status', verifyFBToken, verifyAdmin, async (req, res) => {
+            const { email, status } = req.query;
+
+            if (!['active', 'blocked'].includes(status)) {
+                return res.status(400).send({ message: 'Invalid status' });
             }
-            const result = await userCollection.updateOne(query, updateStatus)
-            res.send(result)
-        })
 
+            const result = await userCollection.updateOne(
+                { email },
+                { $set: { status } }
+            );
+
+            res.send(result);
+        }
+        );
+
+
+        // app.get('/requests/:id', verifyFBToken, async (req, res) => {
+        //     try {
+        //         const { id } = req.params;
+
+        //         // ✅ FIX: validate ObjectId
+        //         if (!ObjectId.isValid(id)) {
+        //             return res.status(400).send({ message: 'Invalid request ID' });
+        //         }
+
+        //         const email = req.decoded_email;
+
+        //         const request = await bloodRequestsCollection.findOne({
+        //             _id: new ObjectId(id)
+        //         });
+
+        //         if (!request) {
+        //             return res.status(404).send({ message: 'Donation request not found' });
+        //         }
+
+        //         if (request.email !== email) {
+        //             return res.status(403).send({ message: 'Forbidden access' });
+        //         }
+
+        //         res.send(request);
+        //     } catch (error) {
+        //         console.error('GET REQUEST ERROR:', error);
+        //         res.status(500).send({ message: 'Failed to fetch donation request' });
+        //     }
+        // });
+
+        app.get('/requests/:id', verifyFBToken, async (req, res) => {
+            try {
+                const { id } = req.params;
+                const email = req.decoded_email;
+                console.log(id, email);
+
+                if (!ObjectId.isValid(id)) {
+                    return res.status(400).send({ message: 'Invalid request ID' });
+                }
+
+                const request = await bloodRequestsCollection.findOne({
+                    _id: new ObjectId(id)
+                });
+
+                if (!request) {
+                    return res.status(404).send({ message: 'Request not found' });
+                }
+
+                const user = await userCollection.findOne({ email });
+
+                if (
+                    user.role === 'donor' &&
+                    request.email !== email
+                ) {
+                    return res.status(403).send({ message: 'Forbidden access' });
+                }
+
+                res.send(request);
+
+            } catch (error) {
+                console.error(error);
+                res.status(500).send({ message: 'Failed to load request' });
+            }
+        });
+
+        // app.get('/requests/:id', verifyFBToken, async (req, res) => {
+        //     try {
+        //         const { id } = req.params;
+        //         const email = req.decoded_email;
+
+        //         if (!ObjectId.isValid(id)) {
+        //             return res.status(400).send({ message: 'Invalid request ID' });
+        //         }
+
+        //         const request = await bloodRequestsCollection.findOne({
+        //             _id: new ObjectId(id)
+        //         });
+
+        //         if (!request) {
+        //             return res.status(404).send({ message: 'Request not found' });
+        //         }
+
+        //         const user = await userCollection.findOne({ email });
+
+        //         // Donor can only view their own requests
+        //         if (user.role === 'donor' && request.email !== email) {
+        //             return res.status(403).send({ message: 'Forbidden access' });
+        //         }
+
+        //         res.send(request);
+        //     } catch (error) {
+        //         res.status(500).send({ message: 'Failed to load request' });
+        //     }
+        // });
+
+
+
+        app.patch('/requests/:id', verifyFBToken, async (req, res) => {
+            try {
+                const { id } = req.params;
+
+                // ✅ ADD THIS
+                if (!ObjectId.isValid(id)) {
+                    return res.status(400).send({ message: 'Invalid request ID' });
+                }
+
+                const email = req.decoded_email;
+
+                const request = await bloodRequestsCollection.findOne({
+                    _id: new ObjectId(id)
+                });
+
+                if (!request) {
+                    return res.status(404).send({ message: 'Not found' });
+                }
+
+                if (request.email !== email) {
+                    return res.status(403).send({ message: 'Forbidden' });
+                }
+
+                if (['done', 'canceled'].includes(request.donation_status)) {
+                    return res.status(400).send({ message: 'Cannot edit completed request' });
+                }
+
+                const result = await bloodRequestsCollection.updateOne(
+                    { _id: new ObjectId(id) },
+                    { $set: req.body }
+                );
+
+                res.send(result);
+            } catch (error) {
+                console.error('PATCH ERROR:', error);
+                res.status(500).send({ message: 'Failed to update request' });
+            }
+        });
+
+
+        app.delete('/requests/:id', verifyFBToken, async (req, res) => {
+            try {
+                const { id } = req.params;
+                const email = req.decoded_email;
+
+                if (!ObjectId.isValid(id)) {
+                    return res.status(400).send({ message: 'Invalid request ID' });
+                }
+
+                const request = await bloodRequestsCollection.findOne({ _id: new ObjectId(id) });
+                if (!request) return res.status(404).send({ message: 'Donation request not found' });
+
+                if (request.email !== email) return res.status(403).send({ message: 'Forbidden access' });
+
+                await bloodRequestsCollection.deleteOne({ _id: new ObjectId(id) });
+
+                res.send({ success: true, message: 'Donation request deleted successfully' });
+            } catch (error) {
+                console.error(error);
+                res.status(500).send({ message: 'Failed to delete donation request' });
+            }
+        });
+
+
+
+        app.patch('/requests/:id/status', verifyFBToken, async (req, res) => {
+            try {
+                const { id } = req.params;
+                const { status } = req.body;
+                const donorEmail = req.decoded_email;
+
+                if (!['inprogress', 'done', 'canceled'].includes(status)) {
+                    return res.status(400).send({ message: 'Invalid status' });
+                }
+
+                const request = await bloodRequestsCollection.findOne({ _id: new ObjectId(id) });
+
+                if (!request) {
+                    return res.status(404).send({ message: 'Request not found' });
+                }
+
+                // Only owner can update
+                if (request.email !== donorEmail) {
+                    return res.status(403).send({ message: 'Forbidden' });
+                }
+
+                // STATUS RULES
+                if (request.donation_status !== 'inprogress') {
+                    return res.status(400).send({
+                        message: 'Status can only be changed from inprogress'
+                    });
+                }
+
+                const updateDoc = {
+                    donation_status: status
+                };
+
+                // Clear donor info after finish/cancel
+                if (status === 'done' || status === 'canceled') {
+                    updateDoc.donorName = null;
+                    updateDoc.donorEmail = null;
+                }
+
+                const result = await bloodRequestsCollection.updateOne(
+                    { _id: new ObjectId(id) },
+                    { $set: updateDoc }
+                );
+
+                res.send(result);
+            } catch (error) {
+                res.status(500).send({ message: 'Failed to update donation status' });
+            }
+        });
+
+        app.patch('/requests/:id/accept', verifyFBToken, async (req, res) => {
+            try {
+                const { id } = req.params;
+                const donorEmail = req.decoded_email;
+
+                const donor = await userCollection.findOne({ email: donorEmail });
+
+                const request = await bloodRequestsCollection.findOne({ _id: new ObjectId(id) });
+
+                if (!request) return res.status(404).send({ message: 'Request not found' });
+
+                if (request.donation_status !== 'pending') {
+                    return res.status(400).send({ message: 'Request already taken' });
+                }
+
+                const result = await bloodRequestsCollection.updateOne(
+                    { _id: new ObjectId(id) },
+                    {
+                        $set: {
+                            donation_status: 'inprogress',
+                            donorName: donor?.name || donor?.displayName,
+                            donorEmail: donorEmail
+                        }
+                    }
+                );
+
+                res.send(result);
+            } catch (error) {
+                res.status(500).send({ message: 'Failed to accept request' });
+            }
+        });
 
 
         // BLOOD Request
+        // app.post('/add-requests', verifyFBToken, async (req, res) => {
+        //     try {
+        //         const data = req.body;
+        //         data.email = req.decoded_email; // force correct email
+        //         // console.log(data.email);
+
+        //         data.createdAt = new Date();
+
+        //         data.donation_status = 'pending';
+        //         data.donorName = null;
+        //         data.donorEmail = null;
+
+        //         const result = await bloodRequestsCollection.insertOne(data);
+        //         res.status(201).send(result);
+        //     } catch (error) {
+        //         console.error(error);
+        //         res.status(500).send({ message: 'Failed to create blood request' });
+        //     }
+        // })
         app.post('/add-requests', verifyFBToken, async (req, res) => {
-            try {
-                const data = req.body;
-                data.email = req.decoded_email; // force correct email
-                // console.log(data.email);
+            const user = await userCollection.findOne({
+                email: req.decoded_email
+            });
 
-                data.createdAt = new Date();
-
-                const result = await bloodRequestsCollection.insertOne(data);
-                res.status(201).send(result);
-            } catch (error) {
-                console.error(error);
-                res.status(500).send({ message: 'Failed to create blood request' });
+            if (user.status === 'blocked') {
+                return res.status(403).send({
+                    message: 'You are blocked and cannot create donation requests'
+                });
             }
-        })
+
+            const data = {
+                ...req.body,
+                email: req.decoded_email,
+                createdAt: new Date(),
+                donation_status: 'pending',
+                donorName: null,
+                donorEmail: null
+            };
+
+            const result = await bloodRequestsCollection.insertOne(data);
+            res.send(result);
+        });
+
 
         app.get('/donor/requests/:email', async (req, res) => {
             const email = req.params.email
@@ -196,17 +494,17 @@ async function run() {
             res.send(result)
         })
 
-        app.get('/donor/recent-requests',verifyFBToken,  async (req, res) => {
+        app.get('/donor/recent-requests', verifyFBToken, async (req, res) => {
             try {
                 const email = req.decoded_email;
-                console.log(email);               
+                // console.log(email);
                 const recentRequests = await bloodRequestsCollection
-                    .find({ email })            
-                    .sort({ createdAt: -1 })    
+                    .find({ email })
+                    .sort({ createdAt: -1 })
                     .limit(3)
                     .toArray();
                 if (!recentRequests || recentRequests.length === 0) {
-                    return res.send(); 
+                    return res.send();
                 }
                 res.send(recentRequests);
             } catch (error) {
@@ -214,8 +512,9 @@ async function run() {
                 res.status(500).send({ message: 'Failed to load recent donation requests' });
             }
         });
+
         // All-requests
-        app.get('/all-requests', async (req, res) => {
+        app.get('/all-requests', verifyFBToken, async (req, res) => {
             const result = await bloodRequestsCollection
                 .find()
                 .toArray();
@@ -320,7 +619,7 @@ async function run() {
         })
 
         // total-funds
-        app.get('/admin/total-funds',verifyFBToken, async (req, res) => {
+        app.get('/admin/total-funds', verifyFBToken, async (req, res) => {
             try {
                 const adminUser = await userCollection.findOne({ email: req.decoded_email });
                 if (!adminUser || (adminUser.role !== 'admin' && adminUser.role !== 'volunteer')) {
@@ -336,6 +635,37 @@ async function run() {
             } catch (error) {
                 console.error(error);
                 res.status(500).send({ message: 'Failed to calculate total funds' });
+            }
+        });
+
+        // contact
+        app.post('/contact', async (req, res) => {
+            try {
+                const { name, email, message } = req.body;
+
+                
+                if (!name || !email || !message) {
+                    return res.status(400).send({ message: 'All fields are required' });
+                }
+
+                const contactData = {
+                    name,
+                    email,
+                    message,
+                    createdAt: new Date(),
+                    status: 'unread' 
+                };
+
+                const result = await contactCollection.insertOne(contactData);
+
+                res.status(201).send({
+                    success: true,
+                    message: 'Message sent successfully',
+                    insertedId: result.insertedId
+                });
+            } catch (error) {
+                console.error('Contact Error:', error);
+                res.status(500).send({ message: 'Failed to send message' });
             }
         });
 

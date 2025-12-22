@@ -1,3 +1,7 @@
 node_modules
 .env
 blooddonate-keys.json
+.vercel
+.env*.local
+
+
